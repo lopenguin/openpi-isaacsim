@@ -1,8 +1,11 @@
-# DROID Sim Evaluation
+# OpenPi in IsaacSim
 
-This repository contains scripts for evaluating DROID policies in a simple ISAAC Sim environment.
+> [!WARNING]  
+> This repository is a work in progress and not yet ready for wider use.
 
-Here is an example rollout of a pi0-FAST-DROID policy:
+The goal of this repository is to create a simple interface for running and prompting OpenPi in IsaacSim. It's built off of the fantastic [sim-evals](https://github.com/arhanjain/sim-evals) repo.
+
+Here are some example rollouts of a pi0-FAST-DROID policy:
 
 Scene 1
 
@@ -25,7 +28,7 @@ The simulation is tuned to work *zero-shot* with DROID policies trained on the r
 
 Clone the repo
 ```bash
-git clone --recurse-submodules git@github.com:arhanjain/sim-evals.git
+git clone --recurse-submodules git@github.com:lopenguin/openpi-isaacsim.git
 cd sim-evals
 ```
 
@@ -49,36 +52,37 @@ First, make sure you download the simulation assets into the root of this direct
 uvx hf download owhan/DROID-sim-environments --repo-type dataset --local-dir assets
 ```
 
-Then, in a separate terminal, launch the policy server on `localhost:8000`. 
-For example, to launch a pi0-FAST-DROID policy (with joint position control),
-checkout [openpi](https://github.com/Physical-Intelligence/openpi) and use the `polaris` configs 
+Then, in a separate terminal, launch the policy server on `localhost:8000`. For example, to launch a pi0-FAST-DROID policy (with joint position control), follow the instructions to install [openpi](https://github.com/Physical-Intelligence/openpi) in a separate uv (or docker) environment. We'll use the `polaris` configs. This repo will work best on a machine with two GPUs. Put openpi on your secondary GPU:
+```bash
+CUDA_VISIBLE_DEVICES=1 uv run scripts/serve_policy.py policy:checkpoint --policy.config=pi05_droid_jointpos_polaris --policy.dir=gs://openpi-assets/checkpoints/pi05_droid_jointpos
+```
+
+<details closed>
+
+<summary><b>Run on a machine with a single GPU</b></summary>
+
 ```bash
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpoint --policy.config=pi05_droid_jointpos_polaris --policy.dir=gs://openpi-assets/checkpoints/pi05_droid_jointpos
 ```
 
 **Note**: We set `XLA_PYTHON_CLIENT_MEM_FRACTION=0.5` to avoid JAX hogging all the GPU memory (incase Isaac Sim is using the same GPU).
 
-Finally, run the evaluation script:
+</details>
+
+Finally, return to this repo's terminal and run the simulation script:
 ```bash
-python run_eval.py --episodes [INT] --scene [INT] --headless
+python run_sim.py ---scene 1
 ```
 
-## Minimal Example
+<details closed>
 
-```python
-env_cfg.set_scene(scene) # pass scene integer
-env = gym.make("DROID", cfg=env_cfg)
+<summary><b>Headless mode</b></summary>
+For a machine with fewer GPU resources, I recommend the headless mode:
 
-obs, _ = env.reset()
-obs, _ = env.reset() # need second render cycle to get correctly loaded materials
-client = # Your policy of choice
-
-max_steps = env.env.max_episode_length
-for _ in tqdm(range(max_steps), desc=f"Episode"):
-    action = client.infer(obs, INSTRUCTION) # calling inference on your policy
-    action = torch.tensor(ret["action"])[None]
-    obs, _, term, trunc, _ = env.step(action)
-    if term or trunc:
-        break
-env.close()
+```bash
+python run_sim.py ---scene 1 --headless
 ```
+
+</details>
+
+You can pick scene 1, 2, or 3, and modify the scene in IsaacSim as desired before prompting OpenPi.
