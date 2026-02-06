@@ -196,7 +196,6 @@ def main(
                             mediapy.write_video(video_dir / f"step_{step_count}.mp4", video, fps=15)
                         with open(video_dir / f"log.json", 'w') as f:
                             json.dump(log, f, indent=4)
-                            print("here")
                     break
 
     env.close()

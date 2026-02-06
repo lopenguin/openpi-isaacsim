@@ -1,8 +1,5 @@
 # OpenPi in IsaacSim
 
-> [!WARNING]  
-> This repository is a work in progress and not yet ready for wider use.
-
 The goal of this repository is to create a simple interface for running and prompting OpenPi in IsaacSim. It's built off of the fantastic [sim-evals](https://github.com/arhanjain/sim-evals) repo.
 
 Here are some example rollouts of a pi0-FAST-DROID policy:
