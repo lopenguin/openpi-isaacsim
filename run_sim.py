@@ -7,23 +7,35 @@ import mediapy
 from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
+import json
 
 from sim_evals.inference.droid_jointpos import Client as DroidJointPosClient
 
 # Global flag
 TRIGGER_PROMPT = False
+QUIT = False
+RESET = False
 
 def input_callback(event, *args):
     global TRIGGER_PROMPT
+    global QUIT
+    global RESET
     import carb 
     import carb.input
     if event.type == carb.input.KeyboardEventType.KEY_PRESS:
         if event.input == carb.input.KeyboardInput.P:
             TRIGGER_PROMPT = True
+        elif event.input == carb.input.KeyboardInput.Q:
+            QUIT = True
+        elif event.input == carb.input.KeyboardInput.R:
+            RESET = True
+
 
 def main(
         headless: bool = False,
         scene: int = 1,
+        max_steps: int = 450,
+        save_video: bool = False,
         ):
     # 1. Launch App
     from isaaclab.app import AppLauncher
@@ -52,7 +64,7 @@ def main(
     if app_window:
         keyboard = app_window.get_keyboard()
         
-    if keyboard:
+    if (not headless) and keyboard:
         input_interface.subscribe_to_keyboard_events(keyboard, input_callback)
         print(">>> LISTENER ACTIVE: Press 'P' in the Isaac Sim window to enter a prompt.")
     else:
@@ -81,24 +93,59 @@ def main(
     video = []
     
     instruction = None
-    # action = None
     # Assuming action space is 1D vector per env
     zero_action = torch.zeros((env_cfg.scene.num_envs, env.action_space.shape[1]))
 
     if headless:
-        print("TODO")
+        match scene:
+            case 1:
+                instruction = "put the cube in the bowl"
+            case 2:
+                instruction = "put the can in the mug"
+            case 3:
+                instruction = "put banana in the bin"
+            case _:
+                raise ValueError(f"Scene {scene} not supported")
+        
+        # run once with default prompt
+        for _ in tqdm(range(max_steps), desc=f"Running headless"):
+            ret = client.infer(obs, instruction)
+            # if not headless:
+            #     cv2.imshow("Right Camera", cv2.cvtColor(ret["viz"], cv2.COLOR_RGB2BGR))
+            #     cv2.waitKey(1)
+            video.append(ret["viz"])
+            action = torch.tensor(ret["action"])[None]
+            obs, _, term, trunc, _ = env.step(action)
+            if term or trunc:
+                break
+
+        client.reset()
+        mediapy.write_video(
+            video_dir / f"episode_1.mp4",
+            video,
+            fps=15,
+        )
+        video = []
 
     else:
-        print(">>> SIMULATION STARTED. Press 'P' in the viewer to give an instruction.")
+        print(">>> SIMULATION STARTED. Press 'P' in the viewer to give an instruction, R to reset, and Q to quit.")
+        log = dict()
         with torch.no_grad():
             global TRIGGER_PROMPT
+            global QUIT
+            global RESET
             step_count = 0
+            start_step = 0
             
             while simulation_app.is_running():
                 step_count += 1
 
                 # Check interrupt
                 if TRIGGER_PROMPT:
+                    if len(video) > 0:
+                        log[step_count] = instruction
+                        mediapy.write_video(video_dir / f"step_{step_count}.mp4", video, fps=15)
+                        video = []
                     TRIGGER_PROMPT = False
                     print("\n" + "="*40)
                     print(">>> SIMULATION PAUSED")
@@ -108,7 +155,8 @@ def main(
                         instruction = user_input
                         print(f">>> New Instruction: '{instruction}'")
                         print("Wait for inference...")
-                        # client.reset()
+                        start_step = step_count
+                        client.reset()
                     else:
                         print(">>> No instruction. Resuming previous state.")
                     print("="*40 + "\n")
@@ -116,24 +164,40 @@ def main(
                 # Determine Action
                 if instruction is not None:
                     ret = client.infer(obs, instruction)
-                    video.append(ret["viz"])
+                    if save_video:
+                        video.append(ret["viz"])
                     action = torch.tensor(ret["action"])[None]
                 else:
                     # stay in same position
-                    # if action is None:
                     action = env.unwrapped.scene['robot'].data.joint_pos[0][:8][None] # this is a hack
 
                 # Step Env
                 obs, _, term, trunc, _ = env.step(action)
                 
                 # Save video on episode end
-                if (term or trunc):
-                    print(f"Episode end or reset after {env_cfg.episode_length_s} seconds elapsed.")
-                    instruction = None
+                if (term or trunc or (instruction and (step_count - start_step > max_steps))) or RESET:
+                    print(f"Episode end after {step_count - start_step} steps or reset after {env_cfg.episode_length_s} seconds elapsed.")
                     if len(video) > 0:
+                        log[step_count] = instruction
                         mediapy.write_video(video_dir / f"step_{step_count}.mp4", video, fps=15)
                         video = []
-                    # client.reset()
+                    instruction = None
+                    client.reset()
+                    if RESET:
+                        print("Reseting...")
+                        client.reset()
+                        RESET = False
+                
+                if QUIT:
+                    print("Quitting...")
+                    if save_video:
+                        if len(video) > 0:
+                            log[step_count] = instruction
+                            mediapy.write_video(video_dir / f"step_{step_count}.mp4", video, fps=15)
+                        with open(video_dir / f"log.json", 'w') as f:
+                            json.dump(log, f, indent=4)
+                            print("here")
+                    break
 
     env.close()
     simulation_app.close()

@@ -71,7 +71,7 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpo
 
 Finally, return to this repo's terminal and run the simulation script:
 ```bash
-python run_sim.py ---scene 1
+python run_sim.py ---scene 1 --save-video
 ```
 
 <details closed>
